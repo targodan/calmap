@@ -19,7 +19,7 @@ from distutils.version import StrictVersion
 from dateutil.relativedelta import relativedelta
 from matplotlib.patches import Polygon
 
-__version_info__ = ("0", "0", "9")
+__version_info__ = ("0", "0", "11")
 __date__ = "22 Nov 2018"
 
 
@@ -62,7 +62,7 @@ def yearplot(
     how : string
         Method for resampling data by day. If `None`, assume data is already
         sampled by day and don't resample. Otherwise, this is passed to Pandas
-        `Series.resample`.
+        `Series.resample` (pandas < 0.18) or `pandas.agg` (pandas >= 0.18).
     vmin : float
         Min Values to anchor the colormap. If `None`, min and max are used after
         resampling data by day.
@@ -148,7 +148,7 @@ def yearplot(
     else:
         # Sample by day.
         if _pandas_18:
-            by_day = data.resample("D").agg(how)
+            by_day = data.groupby(level=0).agg(how).squeeze()
         else:
             by_day = data.resample("D", how=how)
 
@@ -199,11 +199,11 @@ def yearplot(
     )
 
     # Pivot data on day and week and mask NaN days. (we can also mask the days with 0 counts)
-    plot_data = by_day.pivot("day", "week", "data").values[::-1]
+    plot_data = by_day.pivot(index="day", columns="week", values="data").values[::-1]
     plot_data = np.ma.masked_where(np.isnan(plot_data), plot_data)
 
     # Do the same for all days of the year, not just those we have data for.
-    fill_data = by_day.pivot("day", "week", "fill").values[::-1]
+    fill_data = by_day.pivot(index="day", columns="week", values="fill").values[::-1]
     fill_data = np.ma.masked_where(np.isnan(fill_data), fill_data)
 
     # Draw background of heatmap for all days of the year with fillcolor.
@@ -297,6 +297,7 @@ def calendarplot(
     how="sum",
     yearlabels=True,
     yearascending=True,
+    ncols=1,
     yearlabel_kws=None,
     subplot_kws=None,
     gridspec_kws=None,
@@ -321,6 +322,8 @@ def calendarplot(
        Whether or not to draw the year for each subplot.
     yearascending : bool
        Sort the calendar in ascending or descending order.
+    ncols: int
+        Number of columns passed to `subplots` call.
     yearlabel_kws : dict
        Keyword arguments passed to the matplotlib `set_ylabel` call which is
        used to draw the year for each subplot.
@@ -369,22 +372,28 @@ def calendarplot(
     if not yearascending:
         years = years[::-1]
 
+    if ncols == 1:
+        nrows = len(years)
+    else:
+        import math
+        nrows = math.ceil(len(years) / ncols)
+
     fig, axes = plt.subplots(
-        nrows=len(years),
-        ncols=1,
+        nrows=nrows,
+        ncols=ncols,
         squeeze=False,
         subplot_kw=subplot_kws,
         gridspec_kw=gridspec_kws,
         **fig_kws
     )
-    axes = axes.T[0]
+    axes = axes.flatten()
     plt.suptitle(fig_suptitle)
     # We explicitely resample by day only once. This is an optimization.
     if how is None:
         by_day = data
     else:
         if _pandas_18:
-            by_day = data.resample("D").agg(how)
+            by_day = data.groupby(level=0).agg(how).squeeze()
         else:
             by_day = data.resample("D", how=how)
 
@@ -405,6 +414,11 @@ def calendarplot(
 
         if yearlabels:
             ax.set_ylabel(str(year), **ylabel_kws)
+
+    # If we have multiple columns, make sure any extra axes are removed
+    if ncols != 1:
+        for ax in axes[len(years):]:
+            ax.set_axis_off()
 
     # In a leap year it might happen that we have 54 weeks (e.g., 2012).
     # Here we make sure the width is consistent over all years.
