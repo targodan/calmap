@@ -42,6 +42,7 @@ def yearplot(
     linewidth=1,
     linecolor=None,
     daylabels=calendar.day_abbr[:],
+    daylabel_kws=None,
     dayticks=True,
     monthlabels=calendar.month_abbr[1:],
     monthticks=True,
@@ -268,7 +269,7 @@ def yearplot(
         ]
 
         xticks.append(x0 + (x1 - x0 + 1) / 2)
-        labels.append(first.strftime("%b"))
+        labels.append(monthlabels[month - 1])
         if monthly_border:
             poly = Polygon(
                 P,
@@ -284,10 +285,16 @@ def yearplot(
     ax.set_xticklabels(labels)
     ax.set_ylabel("")
     ax.yaxis.set_ticks_position("right")
-    ax.set_yticks([6 - i + 0.5 for i in dayticks])
-    ax.set_yticklabels(
-        [daylabels[i] for i in dayticks], rotation="horizontal", va="center"
+    ax.set_yticks([6 - i + 0.3 for i in dayticks])
+
+    ylabel_kws = dict(
+        fontsize=8,
+        va="center",
+        rotation="horizontal",
     )
+    ylabel_kws.update(daylabel_kws or {})
+
+    ax.set_yticklabels([daylabels[i] for i in dayticks], **ylabel_kws)
 
     return ax
 
@@ -398,10 +405,9 @@ def calendarplot(
             by_day = data.resample("D", how=how)
 
     ylabel_kws = dict(
-        fontsize=32,
-        color=kwargs.get("fillcolor", "whitesmoke"),
+        fontsize=18,
+        color=kwargs.get("yearlabel_color", "black"),
         fontweight="bold",
-        fontname="Arial",
         ha="center",
     )
     ylabel_kws.update(yearlabel_kws)
