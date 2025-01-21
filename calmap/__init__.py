@@ -28,6 +28,8 @@ __author__ = "Marvin Thielk; Martijn Vermaat"
 __contact__ = "marvin.thielk@gmail.com, martijn@vermaat.name"
 __homepage__ = "https://github.com/MarvinT/calmap"
 
+from plotly.express import line_geo
+
 _pandas_18 = StrictVersion(pd.__version__) >= StrictVersion("0.18")
 
 
@@ -304,7 +306,6 @@ def calendarplot(
     how="sum",
     yearlabels=True,
     yearascending=True,
-    ncols=1,
     yearlabel_kws=None,
     subplot_kws=None,
     gridspec_kws=None,
@@ -312,6 +313,9 @@ def calendarplot(
     fig_suptitle=None,
     vmin=None,
     vmax=None,
+    legend=True,
+    legend_resolution=50,
+    legend_nticks=5,
     **kwargs
 ):
     """
@@ -329,8 +333,6 @@ def calendarplot(
        Whether or not to draw the year for each subplot.
     yearascending : bool
        Sort the calendar in ascending or descending order.
-    ncols: int
-        Number of columns passed to `subplots` call.
     yearlabel_kws : dict
        Keyword arguments passed to the matplotlib `set_ylabel` call which is
        used to draw the year for each subplot.
@@ -379,21 +381,48 @@ def calendarplot(
     if not yearascending:
         years = years[::-1]
 
-    if ncols == 1:
-        nrows = len(years)
-    else:
-        import math
-        nrows = math.ceil(len(years) / ncols)
+    nrows = len(years)
 
-    fig, axes = plt.subplots(
-        nrows=nrows,
-        ncols=ncols,
-        squeeze=False,
-        subplot_kw=subplot_kws,
-        gridspec_kw=gridspec_kws,
-        **fig_kws
-    )
-    axes = axes.flatten()
+    vmin, vmax = kwargs.get("vmin", data.min()), kwargs.get("vmax", data.max())
+
+    if legend:
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxy"
+        fig, mosaic = plt.subplot_mosaic(
+            ";".join(f"{alphabet[i]}z" for i in range(nrows)),
+            width_ratios=[.95, .05],
+            # squeeze=False,
+            # subplot_kw=subplot_kws,
+            # gridspec_kw=gridspec_kws,
+            # **fig_kws
+        )
+        axes = []
+        for i in range(nrows):
+            axes.append(mosaic[alphabet[i]])
+
+        legend_ax: plt.Axes = mosaic["z"]
+
+        v = np.linspace(0, vmax, legend_resolution)
+        m = np.zeros((legend_resolution, 1))
+        for i in range(legend_resolution):
+            m[legend_resolution-i-1, 0] = v[i]
+        legend_ax.imshow(m, cmap=kwargs["cmap"], vmin=vmin, vmax=vmax)
+        legend_ax.set_xticks([])
+        xticks = [*np.arange(0, legend_resolution, legend_resolution/legend_nticks), legend_resolution]
+        xlabels = reversed([*(round(f) for f in np.arange(0, vmax, vmax/legend_nticks)), vmax])
+        legend_ax.set_yticks(xticks, xlabels)
+        legend_ax.yaxis.set_ticks_position("right")
+    else:
+        fig, axes = plt.subplots(
+            nrows=nrows,
+            ncols=1,
+            squeeze=False,
+            subplot_kw=subplot_kws,
+            gridspec_kw=gridspec_kws,
+            **fig_kws
+        )
+        axes = axes.flatten()
+
+
     plt.suptitle(fig_suptitle)
     # We explicitely resample by day only once. This is an optimization.
     if how is None:
@@ -420,11 +449,6 @@ def calendarplot(
 
         if yearlabels:
             ax.set_ylabel(str(year), **ylabel_kws)
-
-    # If we have multiple columns, make sure any extra axes are removed
-    if ncols != 1:
-        for ax in axes[len(years):]:
-            ax.set_axis_off()
 
     # In a leap year it might happen that we have 54 weeks (e.g., 2012).
     # Here we make sure the width is consistent over all years.
